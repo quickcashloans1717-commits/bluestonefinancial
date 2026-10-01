@@ -1,3 +1,3 @@
-import app from "../server/index.js";
-
-export default app;
+export default function handler(req, res) {
+  res.status(200).json({ status: "ok", message: "BlueStone Financial API Serverless Endpoint" });
+}
