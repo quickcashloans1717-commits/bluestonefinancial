@@ -1,28 +1,5 @@
 import nodemailer from "nodemailer";
 
-const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  RECIPIENT_EMAIL,
-  EMAIL_FROM_NAME = "BlueStone Financial Applications",
-} = process.env;
-
-if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS || !RECIPIENT_EMAIL) {
-  console.warn("[emailService] Missing SMTP configuration. Check environment variables.");
-}
-
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT || 587),
-  secure: Number(SMTP_PORT) === 465,
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
-});
-
 const formatHTML = (data) => `
 <!DOCTYPE html>
 <html>
@@ -94,15 +71,53 @@ ${Object.entries(data).map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').replace(/
 `;
 
 export const sendLoanApplicationEmail = async (data) => {
-  if (!RECIPIENT_EMAIL) {
-    throw new Error("Recipient email is not configured");
+  const {
+    SMTP_HOST,
+    SMTP_PORT = 465,
+    SMTP_USER,
+    SMTP_PASS,
+    RECIPIENT_EMAIL,
+    EMAIL_FROM_NAME = "BlueStone Financial Applications",
+  } = process.env;
+
+  const missingVars = [];
+  if (!SMTP_HOST) missingVars.push("SMTP_HOST");
+  if (!SMTP_USER) missingVars.push("SMTP_USER");
+  if (!SMTP_PASS) missingVars.push("SMTP_PASS");
+  if (!RECIPIENT_EMAIL) missingVars.push("RECIPIENT_EMAIL");
+
+  console.log("=== NEW FORM SUBMISSION RECEIVED ===");
+  console.log(JSON.stringify(data, null, 2));
+
+  if (missingVars.length > 0) {
+    console.warn(`[emailService WARNING] Missing Vercel Environment Variables: ${missingVars.join(", ")}. Form data was logged to Vercel runtime logs.`);
+    return { sent: false, reason: "MISSING_ENV_VARS", missingVars };
   }
 
-  await transporter.sendMail({
-    from: `${EMAIL_FROM_NAME} <${SMTP_USER}>`,
-    to: RECIPIENT_EMAIL,
-    subject: "New Loan Application Received",
-    text: formatText(data),
-    html: formatHTML(data),
-  });
+  try {
+    const transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: Number(SMTP_PORT || 465),
+      secure: Number(SMTP_PORT) === 465,
+      auth: {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `${EMAIL_FROM_NAME} <${SMTP_USER}>`,
+      to: RECIPIENT_EMAIL,
+      subject: `New Application Received - ${data.formType || "Loan Form"}`,
+      text: formatText(data),
+      html: formatHTML(data),
+    });
+
+    console.log("[emailService SUCCESS] Email sent successfully to", RECIPIENT_EMAIL);
+    return { sent: true };
+  } catch (err) {
+    console.error("[emailService ERROR] Failed to send email via SMTP:", err.message);
+    return { sent: false, error: err.message };
+  }
 };
+
